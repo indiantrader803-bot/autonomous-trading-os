@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   ExternalLink,
   Activity,
@@ -29,16 +30,16 @@ export default function AutonomousDualWorkstation() {
   const [clockStr, setClockStr] = useState("02:48:16");
   const [activeAgentIndex, setActiveAgentIndex] = useState(3);
 
-  // Video-matched full trade log roster
+  // Exact stillness trade log roster with real coin icons
   const [stillnessLogs, setStillnessLogs] = useState([
-    { symbol: "$PIP", icon: "🐣", dev: "bought · sold +170%", status: "+$595", isPositive: true, action: "bought · sold +170%" },
-    { symbol: "$JELLY", icon: "🍮", dev: "bought · sold +255%", status: "+$1,785", isPositive: true, action: "bought · sold +255%" },
-    { symbol: "$SPLIT", icon: "🪓", dev: "dev moved · cut early", status: "-$39", isNegative: true, action: "dev moved · cut early" },
-    { symbol: "$TANGO", icon: "🦩", dev: "bought · sold +225%", status: "+$2,700", isPositive: true, action: "bought · sold +225%" },
-    { symbol: "$KIWI", icon: "🥝", dev: "bought · sold +135%", status: "+$1,080", isPositive: true, action: "bought · sold +135%" },
-    { symbol: "$GLIDE", icon: "🪁", dev: "bought · sold +105%", status: "+$1,050", isPositive: true, action: "bought · sold +105%" },
-    { symbol: "$ONYX", icon: "🪨", dev: "skipped · bundles 47%", status: "SKIPPED", isSkipped: true, action: "skipped · bundles 47%" },
-    { symbol: "$HUSH", icon: "🦉", dev: "skipped · dev 28%", status: "SKIPPED", isSkipped: true, action: "skipped · dev 28%" },
+    { symbol: "$PIP", iconImg: "/coin_pip.png", fallback: "🐣", dev: "bought · sold +170%", status: "+$595", isPositive: true, action: "bought · sold +170%" },
+    { symbol: "$JELLY", iconImg: "/coin_jelly.png", fallback: "🍮", dev: "bought · sold +255%", status: "+$1,785", isPositive: true, action: "bought · sold +255%" },
+    { symbol: "$SPLIT", iconImg: "/coin_split.png", fallback: "🪓", dev: "dev moved · cut early", status: "-$39", isNegative: true, action: "dev moved · cut early" },
+    { symbol: "$TANGO", iconImg: "/coin_tango.png", fallback: "🦩", dev: "bought · sold +225%", status: "+$2,700", isPositive: true, action: "bought · sold +225%" },
+    { symbol: "$KIWI", iconImg: "/coin_kiwi.png", fallback: "🥝", dev: "bought · sold +135%", status: "+$1,080", isPositive: true, action: "bought · sold +135%" },
+    { symbol: "$GLIDE", iconImg: "/coin_glide.png", fallback: "🪁", dev: "bought · sold +105%", status: "+$1,050", isPositive: true, action: "bought · sold +105%" },
+    { symbol: "$ONYX", iconImg: "/coin_onyx.png", fallback: "🪨", dev: "skipped · bundles 47%", status: "SKIPPED", isSkipped: true, action: "skipped · bundles 47%" },
+    { symbol: "$HUSH", iconImg: "/coin_hush.png", fallback: "🦉", dev: "skipped · dev 28%", status: "SKIPPED", isSkipped: true, action: "skipped · dev 28%" },
   ]);
 
   // Active Coin Pipeline (Currently on screen)
@@ -54,7 +55,8 @@ export default function AutonomousDualWorkstation() {
     index: "05 / 09",
     statusText: "SKIPPED",
     statusDetail: "47% bundled by snipers",
-    orderStatus: "NO ORDER SENT"
+    orderStatus: "NO ORDER SENT",
+    iconImg: "/coin_onyx.png"
   });
 
   // 5 Bots Roster for desktop
@@ -99,7 +101,7 @@ export default function AutonomousDualWorkstation() {
       ctx.moveTo(cx - radius, cy);
       ctx.lineTo(cx + radius, cy);
       ctx.moveTo(cx, cy - radius);
-      ctx.lineTo(cx, cy + radius);
+      ctx.lineTo(cx + radius, cy);
       ctx.stroke();
 
       // Rotating radar beam
@@ -274,8 +276,12 @@ export default function AutonomousDualWorkstation() {
               </div>
               <div className="flex flex-col items-end gap-1">
                 <span className="text-[10px] font-mono text-[#7E8B9B]">{activeCoin.index}</span>
-                <div className="w-14 h-14 rounded-full bg-[#E5E9EE] flex items-center justify-center text-3xl shadow">
-                  🪨
+                <div className="w-14 h-14 rounded-full bg-[#1C1E23] border border-white/10 flex items-center justify-center shadow overflow-hidden relative">
+                  <img
+                    src={activeCoin.iconImg}
+                    alt={activeCoin.symbol}
+                    className="w-full h-full object-cover rounded-full"
+                  />
                 </div>
               </div>
             </div>
@@ -337,11 +343,11 @@ export default function AutonomousDualWorkstation() {
             </div>
           </div>
 
-          {/* Trade Log Section (Exact Video match with 8 full entries) */}
+          {/* Trade Log Section (Real Coin Icons) */}
           <div className="flex flex-col gap-2 mt-1">
             <div className="flex items-center justify-between px-1">
               <h2 className="text-base font-black text-white tracking-tight">Trade log</h2>
-              <span className="text-[11px] font-mono text-[#7E8B9B]">3 traded &bull; 2 skipped</span>
+              <span className="text-[11px] font-mono text-[#7E8B9B]">6 traded &bull; 3 skipped</span>
             </div>
 
             <div className="flex flex-col gap-2">
@@ -351,8 +357,16 @@ export default function AutonomousDualWorkstation() {
                   className="px-4 py-3 rounded-2xl bg-[#141518] flex items-center justify-between transition-transform active:scale-98"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-[#24262C] flex items-center justify-center text-lg shadow-inner">
-                      {item.icon}
+                    <div className="w-10 h-10 rounded-full bg-[#202228] border border-white/5 flex items-center justify-center overflow-hidden shadow-inner shrink-0">
+                      <img
+                        src={item.iconImg}
+                        alt={item.symbol}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          // Fallback to text icon if image fails
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
                     </div>
                     <div>
                       <div className="text-sm font-black text-white">{item.symbol}</div>
@@ -385,7 +399,7 @@ export default function AutonomousDualWorkstation() {
       </div>
 
       {/* ========================================================================= */}
-      {/* DESKTOP EXPERIENCE: Multi-Column Trading Terminal with Live Radar & Swarm */}
+      {/* DESKTOP EXPERIENCE: Multi-Column Trading Terminal with Real Coin Badges   */}
       {/* ========================================================================= */}
       <main className="hidden md:grid flex-1 w-full max-w-[1440px] mx-auto p-4 lg:p-6 grid-cols-1 lg:grid-cols-12 gap-6">
         
@@ -425,7 +439,7 @@ export default function AutonomousDualWorkstation() {
           {/* Autonomous Stream Sine Wave Banner */}
           <AutonomousWave height={110} label="AUTONOMOUS STREAM · LIQUIDITY OSCILLATION" />
 
-          {/* Found on Pump.fun Token Inspection Card ($JELLY) */}
+          {/* Found on Pump.fun Token Inspection Card ($ONYX) */}
           <div className="p-6 rounded-2xl bg-[#080808] border border-[#181818] shadow-2xl flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
@@ -443,8 +457,12 @@ export default function AutonomousDualWorkstation() {
                 </div>
               </div>
 
-              <div className="w-14 h-14 rounded-2xl bg-[#F4D06F]/10 border border-[#F4D06F]/30 flex items-center justify-center text-3xl shadow-lg">
-                🪨
+              <div className="w-16 h-16 rounded-2xl bg-[#141518] border border-white/10 flex items-center justify-center shadow-lg overflow-hidden relative">
+                <img
+                  src={activeCoin.iconImg}
+                  alt={activeCoin.symbol}
+                  className="w-full h-full object-cover rounded-xl"
+                />
               </div>
             </div>
 
@@ -587,7 +605,7 @@ export default function AutonomousDualWorkstation() {
             </div>
           </div>
 
-          {/* Desktop Positions & Order Ledger Tabs */}
+          {/* Desktop Positions & Order Ledger Tabs (Showing Real Coin Icons) */}
           <div className="p-6 rounded-2xl bg-[#080808] border border-[#181818] shadow-2xl flex flex-col gap-4">
             <div className="flex items-center justify-between border-b border-[#181818] pb-3">
               <div className="flex items-center gap-2">
@@ -627,8 +645,12 @@ export default function AutonomousDualWorkstation() {
                     className="p-3 rounded-xl bg-[#141518] border border-[#202228] flex items-center justify-between"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-[#24262C] flex items-center justify-center text-sm">
-                        {item.icon}
+                      <div className="w-9 h-9 rounded-full bg-[#202228] border border-white/5 flex items-center justify-center overflow-hidden shadow-inner shrink-0">
+                        <img
+                          src={item.iconImg}
+                          alt={item.symbol}
+                          className="w-full h-full object-cover"
+                        />
                       </div>
                       <div>
                         <div className="text-xs font-black text-white flex items-center gap-2">
