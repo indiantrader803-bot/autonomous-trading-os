@@ -45,8 +45,23 @@ async def autonomous_background_worker():
     ]
     
     scan_idx = 0
+    import random
     while True:
         try:
+            # 1. Simulate dynamic market price fluctuations on active positions to trigger SL / TP
+            if paper_trader.active_positions:
+                simulated_feed = {}
+                for pos in paper_trader.active_positions.values():
+                    sym = pos["symbol"]
+                    cur_px = pos["current_price"]
+                    # Random price walk between -1.5% and +2.5%
+                    delta = (random.random() * 0.04) - 0.015
+                    new_px = max(0.000001, cur_px * (1.0 + delta))
+                    simulated_feed[sym] = new_px
+                
+                paper_trader.update_market_prices(simulated_feed)
+
+            # 2. Open new trades as positions close and capacity frees up
             if len(paper_trader.active_positions) < settings.MAX_SIMULTANEOUS_POSITIONS:
                 # Cycle tokens evenly
                 token = tokens_to_scan[scan_idx % len(tokens_to_scan)]
