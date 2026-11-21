@@ -24,73 +24,76 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Active Exchange Selection State (Dynamic Switchable: DELTA_INDIA, COINBASE, HYPERLIQUID)
+# Active Multi-Exchange Execution State (Simultaneous Dual-Exchange Mode)
 active_exchange_state = {
-    "current_exchange": settings.PRIMARY_EXCHANGE # Default: DELTA_INDIA
+    "current_exchange": "BOTH", # BOTH, DELTA_INDIA, COINBASE
+    "delta_equity": 3.51,
+    "coinbase_equity": 4.90,
+    "total_equity": 8.41
 }
 
-# 24/7 Background Trading Daemon Task
+# 24/7 Background Trading Daemon Task (Simultaneous Dual-Exchange Execution)
 async def autonomous_background_worker():
     """
     Runs continuously 24/7 inside the backend container.
-    Supports multi-exchange routing: Delta Exchange India, Coinbase Advanced, and Hyperliquid.
-    Automatically fetches real available balance, scans live orderbooks, and executes trades.
+    Simultaneously monitors and trades across BOTH Delta Exchange India & Coinbase Advanced.
+    Allocates risk per exchange, monitors live orderbooks, and executes live orders concurrently.
     """
-    print(f"[24/7 WORKER] Multi-Exchange Live Trading Engine Initialized.", flush=True)
+    print(f"[24/7 WORKER] Simultaneous Dual-Exchange Trading Engine Initialized (Delta India + Coinbase).", flush=True)
     await asyncio.sleep(3)
 
     delta_products = [
-        {"symbol": "BTCUSD", "product_id": 21525, "display": "BTCUSD PERP"},
-        {"symbol": "ETHUSD", "product_id": 15367, "display": "ETHUSD PERP"},
-        {"symbol": "SOLUSD", "product_id": 58202, "display": "SOLUSD PERP"},
-        {"symbol": "XRPUSD", "product_id": 67711, "display": "XRPUSD PERP"}
+        {"symbol": "BTCUSD", "product_id": 21525, "exchange": "DELTA_INDIA", "display": "BTCUSD PERP"},
+        {"symbol": "ETHUSD", "product_id": 15367, "exchange": "DELTA_INDIA", "display": "ETHUSD PERP"},
+        {"symbol": "SOLUSD", "product_id": 58202, "exchange": "DELTA_INDIA", "display": "SOLUSD PERP"},
+        {"symbol": "XRPUSD", "product_id": 67711, "exchange": "DELTA_INDIA", "display": "XRPUSD PERP"}
     ]
 
     coinbase_products = [
-        {"symbol": "BTC-PERP", "product_id": "BTC-USDC", "base": "BTC"},
-        {"symbol": "ETH-PERP", "product_id": "ETH-USDC", "base": "ETH"},
-        {"symbol": "SOL-PERP", "product_id": "SOL-USDC", "base": "SOL"}
+        {"symbol": "BTC-PERP", "product_id": "BTC-USDC", "exchange": "COINBASE", "base": "BTC"},
+        {"symbol": "ETH-PERP", "product_id": "ETH-USDC", "exchange": "COINBASE", "base": "ETH"},
+        {"symbol": "SOL-PERP", "product_id": "SOL-USDC", "exchange": "COINBASE", "base": "SOL"}
     ]
 
-    scan_idx = 0
+    scan_d_idx = 0
+    scan_c_idx = 0
+
     while True:
         try:
-            curr_ex = active_exchange_state["current_exchange"]
+            # 1. Concurrently Sync Real Balances from BOTH Exchanges
+            delta_bal = 3.51
+            cb_bal = 4.90
 
-            # 1. Sync Live Balance from selected Exchange
-            if curr_ex == "DELTA_INDIA" and delta_client.is_configured():
-                bal_data = await delta_client.get_wallet_balances()
-                eq = bal_data.get("net_equity", 3.51)
-                if eq > 0:
-                    paper_trader.equity = eq
-            elif curr_ex == "COINBASE" and coinbase_client.is_configured():
-                cb_bal = await coinbase_client.get_total_balance_usd()
-                if cb_bal > 0:
-                    paper_trader.equity = cb_bal
+            if delta_client.is_configured():
+                d_data = await delta_client.get_wallet_balances()
+                delta_bal = d_data.get("net_equity", 3.51)
+                active_exchange_state["delta_equity"] = delta_bal
 
-            # 2. Evaluate Perpetual Futures Market
-            if curr_ex == "DELTA_INDIA":
-                prod = delta_products[scan_idx % len(delta_products)]
-                scan_idx += 1
-                ticker = await delta_client.get_ticker(prod["symbol"])
-                cur_price = ticker.get("close", 0.0) or ticker.get("mark_price", 0.0)
-                eval_symbol = prod["symbol"]
-            else:
-                prod = coinbase_products[scan_idx % len(coinbase_products)]
-                scan_idx += 1
-                ticker = await coinbase_client.get_product_ticker(prod["product_id"])
-                cur_price = ticker.get("price", 0.0)
-                eval_symbol = prod["symbol"]
+            if coinbase_client.is_configured():
+                c_data = await coinbase_client.get_total_balance_usd()
+                if c_data > 0:
+                    cb_bal = c_data
+                    active_exchange_state["coinbase_equity"] = cb_bal
 
-            if cur_price > 0 and len(paper_trader.active_positions) < settings.MAX_SIMULTANEOUS_POSITIONS:
+            total_combined_equity = round(delta_bal + cb_bal, 2)
+            active_exchange_state["total_equity"] = total_combined_equity
+            paper_trader.equity = total_combined_equity
+
+            # 2. Concurrently Scan & Trade Delta Exchange India
+            prod_d = delta_products[scan_d_idx % len(delta_products)]
+            scan_d_idx += 1
+            t_d = await delta_client.get_ticker(prod_d["symbol"])
+            px_d = t_d.get("close", 0.0) or t_d.get("mark_price", 0.0)
+
+            if px_d > 0 and len(paper_trader.active_positions) < settings.MAX_SIMULTANEOUS_POSITIONS:
                 active_symbols = [p["symbol"] for p in paper_trader.active_positions.values()]
-                if eval_symbol not in active_symbols:
-                    state = {
-                        "symbol": eval_symbol,
+                if prod_d["symbol"] not in active_symbols:
+                    state_d = {
+                        "symbol": prod_d["symbol"],
                         "direction": "LONG",
-                        "market_price": cur_price,
-                        "current_equity": paper_trader.equity,
-                        "current_daily_pnl": paper_trader.daily_pnl,
+                        "market_price": px_d,
+                        "current_equity": delta_bal,
+                        "current_daily_pnl": 0.0,
                         "active_positions_count": len(paper_trader.active_positions),
                         "scout_output": None,
                         "researcher_output": None,
@@ -101,55 +104,82 @@ async def autonomous_background_worker():
                         "rejection_reason": None,
                         "setup": None
                     }
-                    res = await committee_graph.ainvoke(state)
-                    if res.get("status") == "APPROVED":
-                        setup = res.get("setup", {})
-                        sizing = setup.get("sizing", {})
-                        notional = min(sizing.get("total_notional", 1.0), 1.5)
-
-                        # Submit live trade if LIVE mode is enabled
-                        if settings.TRADING_MODE == "LIVE":
-                            if curr_ex == "DELTA_INDIA" and delta_client.is_configured():
-                                d_res = await delta_client.place_order(
-                                    product_id=prod.get("product_id", 21525),
-                                    size=1,
-                                    side="buy"
-                                )
-                                print(f"[DELTA INDIA LIVE] Placed order {eval_symbol} -> {d_res}", flush=True)
-                            elif curr_ex == "COINBASE" and coinbase_client.is_configured():
-                                c_res = await coinbase_client.place_order(
-                                    product_id=prod.get("product_id", "BTC-USDC"),
-                                    side="BUY",
-                                    notional_usd=notional
-                                )
-                                print(f"[COINBASE LIVE] Placed order {eval_symbol} -> {c_res}", flush=True)
-
+                    res_d = await committee_graph.ainvoke(state_d)
+                    if res_d.get("status") == "APPROVED":
+                        setup_d = res_d.get("setup", {})
+                        if settings.TRADING_MODE == "LIVE" and delta_client.is_configured():
+                            d_exec = await delta_client.place_order(
+                                product_id=prod_d["product_id"],
+                                size=1,
+                                side="buy"
+                            )
+                            print(f"[DELTA LIVE] Executed {prod_d['symbol']} -> {d_exec}", flush=True)
                         paper_trader.execute_approved_proposal({
-                            "symbol": eval_symbol,
-                            "setup": setup
+                            "symbol": prod_d["symbol"],
+                            "setup": setup_d
                         })
-                        print(f"[{curr_ex}] Trade recorded for {eval_symbol} @ ${cur_price}", flush=True)
 
-            # 3. Dynamic price updates on active positions
+            # 3. Concurrently Scan & Trade Coinbase Advanced
+            prod_c = coinbase_products[scan_c_idx % len(coinbase_products)]
+            scan_c_idx += 1
+            t_c = await coinbase_client.get_product_ticker(prod_c["product_id"])
+            px_c = t_c.get("price", 0.0)
+
+            if px_c > 0 and len(paper_trader.active_positions) < settings.MAX_SIMULTANEOUS_POSITIONS:
+                active_symbols = [p["symbol"] for p in paper_trader.active_positions.values()]
+                if prod_c["symbol"] not in active_symbols:
+                    state_c = {
+                        "symbol": prod_c["symbol"],
+                        "direction": "LONG",
+                        "market_price": px_c,
+                        "current_equity": cb_bal,
+                        "current_daily_pnl": 0.0,
+                        "active_positions_count": len(paper_trader.active_positions),
+                        "scout_output": None,
+                        "researcher_output": None,
+                        "strategist_proposal": None,
+                        "risk_evaluation": None,
+                        "auditor_verification": None,
+                        "status": "EVALUATING",
+                        "rejection_reason": None,
+                        "setup": None
+                    }
+                    res_c = await committee_graph.ainvoke(state_c)
+                    if res_c.get("status") == "APPROVED":
+                        setup_c = res_c.get("setup", {})
+                        if settings.TRADING_MODE == "LIVE" and coinbase_client.is_configured():
+                            c_exec = await coinbase_client.place_order(
+                                product_id=prod_c["product_id"],
+                                side="BUY",
+                                notional_usd=1.50
+                            )
+                            print(f"[COINBASE LIVE] Executed {prod_c['symbol']} -> {c_exec}", flush=True)
+                        paper_trader.execute_approved_proposal({
+                            "symbol": prod_c["symbol"],
+                            "setup": setup_c
+                        })
+
+            # 4. Live Price Feeds Reconciliation for Active Positions
             if paper_trader.active_positions:
                 feed = {}
                 for pos in paper_trader.active_positions.values():
                     sym = pos["symbol"]
-                    if curr_ex == "DELTA_INDIA":
+                    # If Delta product
+                    if "USD" in sym and not "-PERP" in sym:
                         t = await delta_client.get_ticker(sym)
                         p = t.get("close", 0.0) or t.get("mark_price", 0.0)
                         if p > 0: feed[sym] = p
                     else:
-                        matched = next((p for p in coinbase_products if p["symbol"] == sym), None)
-                        if matched:
-                            t = await coinbase_client.get_product_ticker(matched["product_id"])
+                        m = next((p for p in coinbase_products if p["symbol"] == sym), None)
+                        if m:
+                            t = await coinbase_client.get_product_ticker(m["product_id"])
                             if t.get("price", 0) > 0: feed[sym] = t["price"]
                 if feed:
                     paper_trader.update_market_prices(feed)
 
         except Exception as e:
-            print(f"[24/7 WORKER] Error in cycle tick: {e}", flush=True)
-        await asyncio.sleep(10)
+            print(f"[24/7 DUAL WORKER] Error: {e}", flush=True)
+        await asyncio.sleep(8)
 
 @app.on_event("startup")
 async def startup_event():
@@ -185,14 +215,26 @@ async def list_exchanges():
     """
     delta_bal = await delta_client.get_wallet_balances()
     cb_bal = await coinbase_client.get_total_balance_usd()
+    d_eq = delta_bal.get("net_equity", 3.51)
+    c_eq = cb_bal if cb_bal > 0 else 4.90
     
     return [
+        {
+            "id": "BOTH",
+            "name": "Both Exchanges (Delta India + Coinbase)",
+            "base_url": "Simultaneous Dual Execution",
+            "connected": True,
+            "net_equity": round(d_eq + c_eq, 2),
+            "currency": "USD/USDC",
+            "contract_type": "Simultaneous Perps & Futures",
+            "is_active": active_exchange_state["current_exchange"] == "BOTH"
+        },
         {
             "id": "DELTA_INDIA",
             "name": "Delta Exchange India",
             "base_url": settings.DELTA_INDIA_BASE_URL,
             "connected": delta_client.is_configured(),
-            "net_equity": delta_bal.get("net_equity", 3.51),
+            "net_equity": d_eq,
             "currency": "USD",
             "contract_type": "Perpetual Futures",
             "is_active": active_exchange_state["current_exchange"] == "DELTA_INDIA"
@@ -202,20 +244,10 @@ async def list_exchanges():
             "name": "Coinbase Advanced",
             "base_url": "https://api.coinbase.com",
             "connected": coinbase_client.is_configured(),
-            "net_equity": cb_bal if cb_bal > 0 else 4.90,
+            "net_equity": c_eq,
             "currency": "USDC",
             "contract_type": "Futures & Spot",
             "is_active": active_exchange_state["current_exchange"] == "COINBASE"
-        },
-        {
-            "id": "HYPERLIQUID",
-            "name": "Hyperliquid L1",
-            "base_url": "https://api.hyperliquid.xyz",
-            "connected": False,
-            "net_equity": 0.0,
-            "currency": "USDC",
-            "contract_type": "Perpetual DEX",
-            "is_active": active_exchange_state["current_exchange"] == "HYPERLIQUID"
         }
     ]
 
@@ -225,18 +257,22 @@ class SwitchExchangeRequest(BaseModel):
 @app.post("/api/v1/exchanges/switch")
 async def switch_exchange(req: SwitchExchangeRequest):
     ex_id = req.exchange_id.upper()
-    if ex_id not in ["DELTA_INDIA", "COINBASE", "HYPERLIQUID"]:
+    if ex_id not in ["BOTH", "DELTA_INDIA", "COINBASE", "HYPERLIQUID"]:
         raise HTTPException(status_code=400, detail="Unsupported exchange")
     active_exchange_state["current_exchange"] = ex_id
-    paper_trader.active_positions.clear()
     
-    # Immediately pull fresh balance
-    if ex_id == "DELTA_INDIA":
-        b = await delta_client.get_wallet_balances()
-        paper_trader.equity = b.get("net_equity", 3.51)
+    # Recalculate equity
+    d_bal = await delta_client.get_wallet_balances()
+    cb_bal = await coinbase_client.get_total_balance_usd()
+    d_eq = d_bal.get("net_equity", 3.51)
+    c_eq = cb_bal if cb_bal > 0 else 4.90
+    
+    if ex_id == "BOTH":
+        paper_trader.equity = round(d_eq + c_eq, 2)
+    elif ex_id == "DELTA_INDIA":
+        paper_trader.equity = d_eq
     elif ex_id == "COINBASE":
-        cb = await coinbase_client.get_total_balance_usd()
-        paper_trader.equity = cb if cb > 0 else 4.90
+        paper_trader.equity = c_eq
 
     return {
         "status": "SWITCHED",
@@ -249,13 +285,21 @@ async def get_dashboard_overview():
     curr_ex = active_exchange_state["current_exchange"]
     portfolio = paper_trader.get_portfolio_summary()
 
-    if curr_ex == "DELTA_INDIA":
-        d_bal = await delta_client.get_wallet_balances()
-        live_eq = d_bal.get("net_equity", 3.51)
+    d_bal = await delta_client.get_wallet_balances()
+    cb_bal = await coinbase_client.get_total_balance_usd()
+    d_eq = d_bal.get("net_equity", 3.51)
+    c_eq = cb_bal if cb_bal > 0 else 4.90
+
+    if curr_ex == "BOTH":
+        live_eq = round(d_eq + c_eq, 2)
+        ex_name = "SIMULTANEOUS DUAL EXCHANGES (DELTA INDIA + COINBASE)"
+        market_type = "DUAL PERPETUAL FUTURES"
+    elif curr_ex == "DELTA_INDIA":
+        live_eq = d_eq
         ex_name = "DELTA EXCHANGE INDIA"
         market_type = "PERPETUAL FUTURES"
     elif curr_ex == "COINBASE":
-        live_eq = await coinbase_client.get_total_balance_usd()
+        live_eq = c_eq
         ex_name = "COINBASE ADVANCED"
         market_type = "PERPETUAL FUTURES & SPOT"
     else:
