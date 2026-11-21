@@ -26,20 +26,35 @@ app = FastAPI(
 async def autonomous_background_worker():
     """
     Runs continuously 24/7 inside the backend container.
-    Periodically evaluates pool liquidity, runs safety checks, and manages open positions.
+    Scans a diverse basket of qualified Solana meme tokens ($PIP, $JELLY, $ONYX, $KIWI, $TANGO, $SPLIT, $GLIDE).
+    Ensures non-monopolized, diverse positions (maximum 1 open position per symbol).
     """
     print("[24/7 WORKER] Autonomous Trading Engine Initialized.", flush=True)
-    await asyncio.sleep(5)
+    await asyncio.sleep(3)
+    
+    # Roster of tokens with verified real icons and liquid pairs
+    tokens_to_scan = [
+        {"symbol": "PIP", "price": 0.000014},
+        {"symbol": "JELLY", "price": 0.000028},
+        {"symbol": "ONYX", "price": 0.000035},
+        {"symbol": "KIWI", "price": 0.000042},
+        {"symbol": "TANGO", "price": 0.000019},
+        {"symbol": "SPLIT", "price": 0.000016},
+        {"symbol": "GLIDE", "price": 0.000022},
+        {"symbol": "HUSH", "price": 0.000031}
+    ]
+    
+    scan_idx = 0
     while True:
         try:
-            # Check market opportunities for trading tokens
-            tokens_to_scan = [
-                {"symbol": "JELLY", "price": 0.000028},
-                {"symbol": "PIP", "price": 0.000014},
-                {"symbol": "ONYX", "price": 0.000035}
-            ]
-            for token in tokens_to_scan:
-                if len(paper_trader.active_positions) < settings.MAX_SIMULTANEOUS_POSITIONS:
+            if len(paper_trader.active_positions) < settings.MAX_SIMULTANEOUS_POSITIONS:
+                # Cycle tokens evenly
+                token = tokens_to_scan[scan_idx % len(tokens_to_scan)]
+                scan_idx += 1
+                
+                # Prevent opening duplicate positions on the exact same token
+                active_symbols = [p["symbol"] for p in paper_trader.active_positions.values()]
+                if token["symbol"] not in active_symbols:
                     state = {
                         "symbol": token["symbol"],
                         "direction": "LONG",
@@ -63,10 +78,9 @@ async def autonomous_background_worker():
                             "setup": res.get("setup")
                         })
                         print(f"[24/7 WORKER] Filled trade for {token['symbol']} @ {token['price']}", flush=True)
-                        break
         except Exception as e:
             print(f"[24/7 WORKER] Error in cycle tick: {e}", flush=True)
-        await asyncio.sleep(30)
+        await asyncio.sleep(10)
 
 @app.on_event("startup")
 async def startup_event():

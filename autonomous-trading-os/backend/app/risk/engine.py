@@ -90,9 +90,9 @@ class RiskEngine:
             calculated_units = max_notional / entry_price
             total_notional = max_notional
 
-        # Minimum notional check (prevent sub-cent micro dust trades)
-        if total_notional < 1.0:
-            return False, f"REJECTED: Notional trade value (${total_notional:.2f}) is below minimum exchange sizing of $1.00. Capital preserved.", {}
+        # Minimum notional check (support small capital down to micro positions)
+        if total_notional < 0.20:
+            return False, f"REJECTED: Notional trade value (${total_notional:.2f}) is below minimum exchange sizing of $0.20. Capital preserved.", {}
 
         sizing_info = {
             "approved": True,

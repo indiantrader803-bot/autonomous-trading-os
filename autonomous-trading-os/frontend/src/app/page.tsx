@@ -35,7 +35,30 @@ export default function AutonomousDualWorkstation() {
   const [openPositions, setOpenPositions] = useState<any[]>([]);
   const [tradeLogs, setTradeLogs] = useState<any[]>([]);
 
-  // Active Coin Highlight (Current Focus Token)
+  // Resolve coin icon dynamically for any symbol
+  const getCoinIcon = (symbol: string) => {
+    const s = symbol.replace("$", "").toUpperCase();
+    switch (s) {
+      case "PIP":
+        return "/coin_pip.png";
+      case "JELLY":
+        return "/coin_jelly.png";
+      case "ONYX":
+        return "/coin_onyx.png";
+      case "KIWI":
+        return "/coin_kiwi.png";
+      case "TANGO":
+        return "/coin_tango.png";
+      case "SPLIT":
+        return "/coin_split.png";
+      case "HUSH":
+        return "/coin_hush.png";
+      case "GLIDE":
+        return "/coin_glide.png";
+      default:
+        return "/coin_jelly.png";
+    }
+  };
   const [activeCoin, setActiveCoin] = useState({
     symbol: "$PIP",
     name: "Pip Token",
@@ -95,18 +118,7 @@ export default function AutonomousDualWorkstation() {
           if (positions.length > 0) {
             const latest = positions[positions.length - 1];
             const sym = latest.symbol.startsWith("$") ? latest.symbol : `$${latest.symbol}`;
-            const icon =
-              sym === "$PIP"
-                ? "/coin_pip.png"
-                : sym === "$JELLY"
-                ? "/coin_jelly.png"
-                : sym === "$ONYX"
-                ? "/coin_onyx.png"
-                : sym === "$KIWI"
-                ? "/coin_kiwi.png"
-                : sym === "$TANGO"
-                ? "/coin_tango.png"
-                : "/coin_jelly.png";
+            const icon = getCoinIcon(sym);
 
             setActiveCoin({
               symbol: sym,
@@ -429,16 +441,7 @@ export default function AutonomousDualWorkstation() {
               ) : (
                 openPositions.map((pos, idx) => {
                   const sym = pos.symbol.startsWith("$") ? pos.symbol : `$${pos.symbol}`;
-                  const icon =
-                    sym === "$PIP"
-                      ? "/coin_pip.png"
-                      : sym === "$JELLY"
-                      ? "/coin_jelly.png"
-                      : sym === "$ONYX"
-                      ? "/coin_onyx.png"
-                      : sym === "$KIWI"
-                      ? "/coin_kiwi.png"
-                      : "/coin_jelly.png";
+                  const icon = getCoinIcon(sym);
 
                   return (
                     <div
@@ -742,16 +745,7 @@ export default function AutonomousDualWorkstation() {
                     <tbody className="divide-y divide-[#181818]">
                       {openPositions.map((pos) => {
                         const sym = pos.symbol.startsWith("$") ? pos.symbol : `$${pos.symbol}`;
-                        const icon =
-                          sym === "$PIP"
-                            ? "/coin_pip.png"
-                            : sym === "$JELLY"
-                            ? "/coin_jelly.png"
-                            : sym === "$ONYX"
-                            ? "/coin_onyx.png"
-                            : sym === "$KIWI"
-                            ? "/coin_kiwi.png"
-                            : "/coin_jelly.png";
+                        const icon = getCoinIcon(sym);
 
                         return (
                           <tr key={pos.id}>
