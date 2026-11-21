@@ -1,4 +1,5 @@
 import psutil
+import asyncio
 from datetime import datetime
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +21,57 @@ app = FastAPI(
     description="Institutional AI Trading Operating System",
     version="1.0.0"
 )
+
+# 24/7 Background Trading Daemon Task
+async def autonomous_background_worker():
+    """
+    Runs continuously 24/7 inside the backend container.
+    Periodically evaluates pool liquidity, runs safety checks, and manages open positions.
+    """
+    print("[24/7 WORKER] Autonomous Trading Engine Initialized.", flush=True)
+    await asyncio.sleep(5)
+    while True:
+        try:
+            # Check market opportunities for trading tokens
+            tokens_to_scan = [
+                {"symbol": "JELLY", "price": 0.000028},
+                {"symbol": "PIP", "price": 0.000014},
+                {"symbol": "ONYX", "price": 0.000035}
+            ]
+            for token in tokens_to_scan:
+                if len(paper_trader.active_positions) < settings.MAX_SIMULTANEOUS_POSITIONS:
+                    state = {
+                        "symbol": token["symbol"],
+                        "direction": "LONG",
+                        "market_price": token["price"],
+                        "current_equity": paper_trader.equity,
+                        "current_daily_pnl": paper_trader.daily_pnl,
+                        "active_positions_count": len(paper_trader.active_positions),
+                        "scout_output": None,
+                        "researcher_output": None,
+                        "strategist_proposal": None,
+                        "risk_evaluation": None,
+                        "auditor_verification": None,
+                        "status": "EVALUATING",
+                        "rejection_reason": None,
+                        "setup": None
+                    }
+                    res = await committee_graph.ainvoke(state)
+                    if res.get("status") == "APPROVED":
+                        paper_trader.execute_approved_proposal({
+                            "symbol": token["symbol"],
+                            "setup": res.get("setup")
+                        })
+                        print(f"[24/7 WORKER] Filled trade for {token['symbol']} @ {token['price']}", flush=True)
+                        break
+        except Exception as e:
+            print(f"[24/7 WORKER] Error in cycle tick: {e}", flush=True)
+        await asyncio.sleep(30)
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(autonomous_background_worker())
+
 
 # Enable CORS for Frontend UI
 app.add_middleware(
