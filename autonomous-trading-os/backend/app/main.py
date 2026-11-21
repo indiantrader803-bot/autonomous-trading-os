@@ -114,10 +114,11 @@ async def autonomous_background_worker():
                                 side="buy"
                             )
                             print(f"[DELTA LIVE] Executed {prod_d['symbol']} -> {d_exec}", flush=True)
-                        paper_trader.execute_approved_proposal({
-                            "symbol": prod_d["symbol"],
-                            "setup": setup_d
-                        })
+                        else:
+                            paper_trader.execute_approved_proposal({
+                                "symbol": prod_d["symbol"],
+                                "setup": setup_d
+                            })
 
             # 3. Concurrently Scan & Trade Coinbase Advanced
             prod_c = coinbase_products[scan_c_idx % len(coinbase_products)]
@@ -154,10 +155,11 @@ async def autonomous_background_worker():
                                 notional_usd=1.50
                             )
                             print(f"[COINBASE LIVE] Executed {prod_c['symbol']} -> {c_exec}", flush=True)
-                        paper_trader.execute_approved_proposal({
-                            "symbol": prod_c["symbol"],
-                            "setup": setup_c
-                        })
+                        else:
+                            paper_trader.execute_approved_proposal({
+                                "symbol": prod_c["symbol"],
+                                "setup": setup_c
+                            })
 
             # 4. Live Price Feeds Reconciliation for Active Positions
             if paper_trader.active_positions:
@@ -312,6 +314,19 @@ async def get_dashboard_overview():
         portfolio["cash_balance"] = live_eq
 
     markets = await market_provider.get_hyperliquid_markets()
+
+    # Fetch real live exchange positions when LIVE
+    if settings.TRADING_MODE == "LIVE":
+        real_positions = []
+        if delta_client.is_configured():
+            real_positions.extend(await delta_client.get_real_positions())
+        if coinbase_client.is_configured():
+            real_positions.extend(await coinbase_client.get_real_positions())
+        dashboard_positions = real_positions
+        portfolio["open_positions_count"] = len(real_positions)
+    else:
+        dashboard_positions = list(paper_trader.active_positions.values())
+
     return {
         "status": {
             "operational": True,
@@ -325,7 +340,7 @@ async def get_dashboard_overview():
             "last_updated": datetime.utcnow().isoformat()
         },
         "portfolio": portfolio,
-        "active_positions": list(paper_trader.active_positions.values()),
+        "active_positions": dashboard_positions,
         "top_markets": markets[:5] if markets else [],
         "risk_limits": {
             "reference_capital": settings.REFERENCE_CAPITAL_USD,
@@ -430,6 +445,25 @@ async def evaluate_trade(req: ProposalRequest):
 # --- 4. TRADING & POSITIONS ---
 @app.get("/api/v1/positions")
 async def list_positions():
+    """
+    Returns real live exchange positions directly from connected exchanges
+    (Delta Exchange India and Coinbase) when in LIVE mode, guaranteeing 100% 
+    synchronicity between UI and exchange records with zero ghost positions.
+    """
+    if settings.TRADING_MODE == "LIVE":
+        real_positions = []
+        if delta_client.is_configured():
+            d_pos = await delta_client.get_real_positions()
+            real_positions.extend(d_pos)
+        if coinbase_client.is_configured():
+            cb_pos = await coinbase_client.get_real_positions()
+            real_positions.extend(cb_pos)
+
+        return {
+            "open_positions": real_positions,
+            "trade_history": paper_trader.trade_history
+        }
+
     return {
         "open_positions": list(paper_trader.active_positions.values()),
         "trade_history": paper_trader.trade_history

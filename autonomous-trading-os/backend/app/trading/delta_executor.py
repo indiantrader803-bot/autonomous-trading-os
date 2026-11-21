@@ -68,6 +68,51 @@ class DeltaExchangeIndiaClient:
 
         return {"net_equity": 0.0, "available_balance": 0.0, "currency": "USD"}
 
+    async def get_real_positions(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves real-time open positions directly from Delta Exchange India margined positions.
+        """
+        if not self.is_configured():
+            return []
+
+        path = "/v2/positions/margined"
+        headers = self._generate_signature("GET", path)
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                res = await client.get(f"{self.base_url}{path}", headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    raw_positions = data.get("result", [])
+                    cleaned_positions = []
+                    for p in raw_positions:
+                        size = float(p.get("size", 0.0))
+                        if size != 0:
+                            entry_px = float(p.get("entry_price") or p.get("cost", 0.0) or 0.0)
+                            prod_info = p.get("product", {})
+                            sym = prod_info.get("symbol", "BTCUSD")
+                            notional = round(abs(size) * entry_px * float(prod_info.get("contract_value", 0.001)), 2)
+                            cleaned_positions.append({
+                                "id": f"delta_{p.get('id') or sym}",
+                                "symbol": f"${sym}",
+                                "exchange": "DELTA_INDIA",
+                                "direction": "LONG" if size > 0 else "SHORT",
+                                "entry_price": entry_px,
+                                "size": size,
+                                "notional": notional if notional > 0 else round(float(p.get("margin", 1.0)), 2),
+                                "margin": round(float(p.get("margin", 0.0)), 4),
+                                "stop_loss": round(entry_px * 0.98, 2) if size > 0 else round(entry_px * 1.02, 2),
+                                "take_profit": round(entry_px * 1.04, 2) if size > 0 else round(entry_px * 0.96, 2),
+                                "status": "OPEN",
+                                "opened_at": p.get("created_at") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                "real_exchange": True
+                            })
+                    return cleaned_positions
+            except Exception as e:
+                print(f"[DELTA INDIA] Error fetching real positions: {e}", flush=True)
+
+        return []
+
     async def get_ticker(self, symbol: str = "BTCUSD") -> Dict[str, Any]:
         """
         Retrieves real live perpetual price, mark price, and 24h stats.

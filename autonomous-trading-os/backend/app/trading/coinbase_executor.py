@@ -55,6 +55,48 @@ class CoinbaseAdvancedClient:
         }
         return jwt.encode(payload, self._pem, algorithm="EdDSA", headers=headers)
 
+    async def get_real_positions(self) -> List[Dict[str, Any]]:
+        """
+        Retrieves real-time open positions / active orders directly from Coinbase Advanced Trade.
+        """
+        if not self.is_configured():
+            return []
+
+        path = "/api/v3/brokerage/orders/historical/batch"
+        tok = self._generate_jwt("GET", path)
+        headers = {
+            "Authorization": f"Bearer {tok}",
+            "Content-Type": "application/json"
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                res = await client.get(f"https://api.coinbase.com{path}?order_status=OPEN", headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    orders = data.get("orders", [])
+                    cleaned = []
+                    for o in orders:
+                        prod = o.get("product_id", "")
+                        side = o.get("side", "BUY")
+                        cleaned.append({
+                            "id": f"cb_{o.get('order_id')}",
+                            "symbol": f"${prod}",
+                            "exchange": "COINBASE",
+                            "direction": "LONG" if side == "BUY" else "SHORT",
+                            "entry_price": float(o.get("order_configuration", {}).get("limit_limit_gtc", {}).get("limit_price", 0.0) or 0.0),
+                            "notional": 1.50,
+                            "stop_loss": 0.0,
+                            "take_profit": 0.0,
+                            "status": "OPEN",
+                            "opened_at": o.get("created_time") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                            "real_exchange": True
+                        })
+                    return cleaned
+            except Exception as e:
+                print(f"[COINBASE] Error fetching positions: {e}", flush=True)
+
+        return []
+
     async def get_accounts(self) -> List[Dict[str, Any]]:
         """
         Retrieves live balances from Coinbase account.
