@@ -37,8 +37,18 @@ export default function AutonomousDualWorkstation() {
 
   // Resolve coin icon dynamically for any symbol
   const getCoinIcon = (symbol: string) => {
-    const s = symbol.replace("$", "").toUpperCase();
+    const s = symbol.replace("$", "").replace("-PERP", "").toUpperCase();
     switch (s) {
+      case "BTC":
+        return "/coin_onyx.png";
+      case "ETH":
+        return "/coin_jelly.png";
+      case "SOL":
+        return "/coin_kiwi.png";
+      case "DOGE":
+        return "/coin_tango.png";
+      case "XRP":
+        return "/coin_split.png";
       case "PIP":
         return "/coin_pip.png";
       case "JELLY":
@@ -250,18 +260,20 @@ export default function AutonomousDualWorkstation() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#00D35A] inline-block animate-ping"></span>
-            <span className="font-extrabold text-sm tracking-wider text-white">GROK BOT · STILLNESS DESK</span>
+            <span className="font-extrabold text-sm tracking-wider text-white">COINBASE PERP · GROK DESK</span>
             <span className="text-[10px] text-[#64748B] hidden md:inline font-mono">
-              pump.fun terminal · live paper execution · 8-layer safety
+              Coinbase Advanced Trade · Perpetual Futures & Spot · Real Capital Mode
             </span>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
           <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-[#8094AE]">
-            <span className="text-[#00D35A] font-bold">● LIVE PAPER</span>
+            <span className="text-[#00D35A] font-bold">● COINBASE LIVE</span>
             <span>|</span>
             <span className="text-white font-black">CAPITAL: ${balance.toFixed(2)}</span>
+            <span>|</span>
+            <span className="text-[#38BDF8] font-bold">EXCHANGE: COINBASE ADVANCED</span>
             <span>|</span>
             <span className="text-[#00D35A]">OPEN: {openPositions.length} POS</span>
           </div>
@@ -313,7 +325,7 @@ export default function AutonomousDualWorkstation() {
                   </span>
                 </div>
                 <div className="text-[10px] text-[#7E8B9B] font-mono mt-0.5">
-                  pump.fun terminal &bull; @IndianTradee
+                  Coinbase Advanced Perpetual &bull; Real Capital
                 </div>
               </div>
             </div>

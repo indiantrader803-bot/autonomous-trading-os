@@ -12,6 +12,7 @@ from app.agents.committee_graph import committee_graph
 from app.risk.engine import risk_engine
 from app.trading.execution import paper_trader
 from app.trading.live_executor import live_executor
+from app.trading.coinbase_executor import coinbase_client
 from app.providers.market_data import market_provider
 from app.providers.ccxt_connector import ccxt_connector
 from app.services.litellm_router import unified_router
@@ -26,54 +27,43 @@ app = FastAPI(
 async def autonomous_background_worker():
     """
     Runs continuously 24/7 inside the backend container.
-    Scans a diverse basket of qualified Solana meme tokens ($PIP, $JELLY, $ONYX, $KIWI, $TANGO, $SPLIT, $GLIDE).
-    Ensures non-monopolized, diverse positions (maximum 1 open position per symbol).
+    Connected directly to Coinbase Advanced Trade & Perpetual Futures.
+    Tracks real balances, analyzes live market orderbooks, and executes live trades.
     """
-    print("[24/7 WORKER] Autonomous Trading Engine Initialized.", flush=True)
+    print(f"[24/7 WORKER] Coinbase Live Trading Engine Initialized. Mode: {settings.TRADING_MODE}", flush=True)
     await asyncio.sleep(3)
-    
-    # Roster of tokens with verified real icons and liquid pairs
-    tokens_to_scan = [
-        {"symbol": "PIP", "price": 0.000014},
-        {"symbol": "JELLY", "price": 0.000028},
-        {"symbol": "ONYX", "price": 0.000035},
-        {"symbol": "KIWI", "price": 0.000042},
-        {"symbol": "TANGO", "price": 0.000019},
-        {"symbol": "SPLIT", "price": 0.000016},
-        {"symbol": "GLIDE", "price": 0.000022},
-        {"symbol": "HUSH", "price": 0.000031}
+
+    # Perpetual Futures and High-Liquidity Products on Coinbase
+    coinbase_products = [
+        {"symbol": "BTC-PERP", "product_id": "BTC-USDC", "base": "BTC"},
+        {"symbol": "ETH-PERP", "product_id": "ETH-USDC", "base": "ETH"},
+        {"symbol": "SOL-PERP", "product_id": "SOL-USDC", "base": "SOL"},
+        {"symbol": "DOGE-PERP", "product_id": "DOGE-USDC", "base": "DOGE"},
+        {"symbol": "XRP-PERP", "product_id": "XRP-USDC", "base": "XRP"}
     ]
-    
+
     scan_idx = 0
-    import random
     while True:
         try:
-            # 1. Simulate dynamic market price fluctuations on active positions to trigger SL / TP
-            if paper_trader.active_positions:
-                simulated_feed = {}
-                for pos in paper_trader.active_positions.values():
-                    sym = pos["symbol"]
-                    cur_px = pos["current_price"]
-                    # Random price walk between -1.5% and +2.5%
-                    delta = (random.random() * 0.04) - 0.015
-                    new_px = max(0.000001, cur_px * (1.0 + delta))
-                    simulated_feed[sym] = new_px
-                
-                paper_trader.update_market_prices(simulated_feed)
+            # Query real live balance from Coinbase
+            cb_balance = await coinbase_client.get_total_balance_usd()
+            if cb_balance > 0:
+                paper_trader.equity = cb_balance
 
-            # 2. Open new trades as positions close and capacity frees up
-            if len(paper_trader.active_positions) < settings.MAX_SIMULTANEOUS_POSITIONS:
-                # Cycle tokens evenly
-                token = tokens_to_scan[scan_idx % len(tokens_to_scan)]
-                scan_idx += 1
-                
-                # Prevent opening duplicate positions on the exact same token
+            # Evaluate selected perpetual/spot market
+            prod = coinbase_products[scan_idx % len(coinbase_products)]
+            scan_idx += 1
+
+            ticker = await coinbase_client.get_product_ticker(prod["product_id"])
+            cur_price = ticker.get("price", 0.0)
+
+            if cur_price > 0 and len(paper_trader.active_positions) < settings.MAX_SIMULTANEOUS_POSITIONS:
                 active_symbols = [p["symbol"] for p in paper_trader.active_positions.values()]
-                if token["symbol"] not in active_symbols:
+                if prod["symbol"] not in active_symbols:
                     state = {
-                        "symbol": token["symbol"],
+                        "symbol": prod["symbol"],
                         "direction": "LONG",
-                        "market_price": token["price"],
+                        "market_price": cur_price,
                         "current_equity": paper_trader.equity,
                         "current_daily_pnl": paper_trader.daily_pnl,
                         "active_positions_count": len(paper_trader.active_positions),
@@ -88,11 +78,39 @@ async def autonomous_background_worker():
                     }
                     res = await committee_graph.ainvoke(state)
                     if res.get("status") == "APPROVED":
+                        setup = res.get("setup", {})
+                        sizing = setup.get("sizing", {})
+                        notional = min(sizing.get("total_notional", 1.0), 2.0) # Conservative $2.00 size on Coinbase
+
+                        # Submit live order if LIVE mode enabled
+                        if settings.TRADING_MODE == "LIVE" and coinbase_client.is_configured():
+                            cb_res = await coinbase_client.place_order(
+                                product_id=prod["product_id"],
+                                side="BUY",
+                                notional_usd=notional
+                            )
+                            print(f"[COINBASE LIVE] Placed order for {prod['symbol']} ${notional} -> {cb_res}", flush=True)
+
                         paper_trader.execute_approved_proposal({
-                            "symbol": token["symbol"],
-                            "setup": res.get("setup")
+                            "symbol": prod["symbol"],
+                            "setup": setup
                         })
-                        print(f"[24/7 WORKER] Filled trade for {token['symbol']} @ {token['price']}", flush=True)
+                        print(f"[COINBASE] Trade recorded for {prod['symbol']} @ ${cur_price}", flush=True)
+
+            # Reconcile active prices with live Coinbase market prices
+            if paper_trader.active_positions:
+                feed = {}
+                for pos in paper_trader.active_positions.values():
+                    sym = pos["symbol"]
+                    # Match symbol to product
+                    matched = next((p for p in coinbase_products if p["symbol"] == sym), None)
+                    if matched:
+                        t = await coinbase_client.get_product_ticker(matched["product_id"])
+                        if t.get("price", 0) > 0:
+                            feed[sym] = t["price"]
+                if feed:
+                    paper_trader.update_market_prices(feed)
+
         except Exception as e:
             print(f"[24/7 WORKER] Error in cycle tick: {e}", flush=True)
         await asyncio.sleep(10)
@@ -127,11 +145,18 @@ audit_logs = [
 @app.get("/api/v1/dashboard")
 async def get_dashboard_overview():
     portfolio = paper_trader.get_portfolio_summary()
+    cb_balance = await coinbase_client.get_total_balance_usd()
+    if cb_balance > 0:
+        portfolio["total_equity"] = cb_balance
+        portfolio["cash_balance"] = cb_balance
+
     markets = await market_provider.get_hyperliquid_markets()
     return {
         "status": {
             "operational": True,
             "trading_mode": settings.TRADING_MODE,
+            "exchange": "COINBASE ADVANCED",
+            "market_type": "PERPETUAL FUTURES & SPOT",
             "emergency_halt": risk_engine.is_halted,
             "paper_trading": settings.PAPER_TRADING,
             "active_ai_model": "Claude 3.5 Sonnet / GPT-4o Committee",

@@ -9,9 +9,9 @@ class Settings(BaseSettings):
     APP_SECRET_KEY: str = "atos_super_secret_master_key_998822"
     
     # Trading State
-    TRADING_MODE: str = "PAPER" # OBSERVATION, PAPER, APPROVAL, AUTONOMOUS
-    PAPER_TRADING: bool = True
-    LIVE_TRADING_ENABLED: bool = False
+    TRADING_MODE: str = "LIVE" # OBSERVATION, PAPER, APPROVAL, AUTONOMOUS, LIVE
+    PAPER_TRADING: bool = False
+    LIVE_TRADING_ENABLED: bool = True
     HALT_TRADING: bool = False
     
     # Storage
@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     
     # Exchange / Data APIs
+    PRIMARY_EXCHANGE: str = "COINBASE"
+    COINBASE_API_KEY: Optional[str] = "organizations/6d27216d-8101-495c-b234-352cf7881f1d/apiKeys/2b10ad83-c3c3-42be-836f-a108ddc13bd5"
+    COINBASE_API_SECRET: Optional[str] = "nRkDC5CUV7tg9RNXsBPAxl5Upx3A1zMJTEKIAIBLBt21+f1VdjuG5d61dJskiVIAt6xWjXFGbjn7d3OE3rkYRQ=="
     HYPERLIQUID_TESTNET: bool = True
     HYPERLIQUID_WALLET_ADDRESS: Optional[str] = None
     HYPERLIQUID_API_SECRET: Optional[str] = None
