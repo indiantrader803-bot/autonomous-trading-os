@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6380/0"
     
     # Risk Parameters
-    REFERENCE_CAPITAL_USD: float = 4.90
+    REFERENCE_CAPITAL_USD: float = 3.51
     RISK_PER_TRADE_PERCENT: float = 1.0
     DAILY_LOSS_LIMIT_PERCENT: float = 3.0
     MAX_DRAWDOWN_PERCENT: float = 10.0
@@ -38,7 +38,10 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     
     # Exchange / Data APIs
-    PRIMARY_EXCHANGE: str = "COINBASE"
+    PRIMARY_EXCHANGE: str = "DELTA_INDIA" # DELTA_INDIA, COINBASE, HYPERLIQUID
+    DELTA_INDIA_BASE_URL: str = "https://api.india.delta.exchange"
+    DELTA_INDIA_API_KEY: Optional[str] = "k347QTgUS8WE4VITjB4Vw9ntHOOe0Q"
+    DELTA_INDIA_API_SECRET: Optional[str] = "QbuYosXXqk4Sq33pPjmSpZj0jKo99YDTAwWbdN0lVjasBHRVX1tNpMiUYscE"
     COINBASE_API_KEY: Optional[str] = "organizations/6d27216d-8101-495c-b234-352cf7881f1d/apiKeys/2b10ad83-c3c3-42be-836f-a108ddc13bd5"
     COINBASE_API_SECRET: Optional[str] = "nRkDC5CUV7tg9RNXsBPAxl5Upx3A1zMJTEKIAIBLBt21+f1VdjuG5d61dJskiVIAt6xWjXFGbjn7d3OE3rkYRQ=="
     HYPERLIQUID_TESTNET: bool = True

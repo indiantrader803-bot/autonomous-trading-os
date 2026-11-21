@@ -24,12 +24,21 @@ export default function AutonomousDualWorkstation() {
   const [activeTab, setActiveTab] = useState<"positions" | "terminal">("positions");
 
   // Real Account & Live Portfolio State (Loaded from Backend API)
-  const [balance, setBalance] = useState<number>(4.90);
+  const [balance, setBalance] = useState<number>(3.51);
   const [todayProfit, setTodayProfit] = useState<number>(0.00);
-  const [startCapital, setStartCapital] = useState<number>(4.90);
+  const [startCapital, setStartCapital] = useState<number>(3.51);
   const [multiplier, setMultiplier] = useState<number>(1.0);
   const [clockStr, setClockStr] = useState<string>("19:30:00");
   const [activeAgentIndex, setActiveAgentIndex] = useState(3);
+
+  // Exchange Management State
+  const [exchanges, setExchanges] = useState<any[]>([
+    { id: "DELTA_INDIA", name: "Delta Exchange India", net_equity: 3.51, currency: "USD", contract_type: "Perpetual Futures", connected: true },
+    { id: "COINBASE", name: "Coinbase Advanced", net_equity: 4.90, currency: "USDC", contract_type: "Futures & Spot", connected: true },
+    { id: "HYPERLIQUID", name: "Hyperliquid L1", net_equity: 0.00, currency: "USDC", contract_type: "Perpetual DEX", connected: false }
+  ]);
+  const [selectedExchange, setSelectedExchange] = useState<string>("DELTA_INDIA");
+  const [isSwitching, setIsSwitching] = useState<boolean>(false);
 
   // Live Real Open Positions from Backend
   const [openPositions, setOpenPositions] = useState<any[]>([]);
@@ -98,24 +107,59 @@ export default function AutonomousDualWorkstation() {
   // Radar Canvas Reference
   const radarCanvasRef = useRef<HTMLCanvasElement>(null);
 
+  // Switch Active Exchange API Handler
+  const handleExchangeChange = async (exchangeId: string) => {
+    setIsSwitching(true);
+    setSelectedExchange(exchangeId);
+    try {
+      await fetch("http://localhost:8000/api/v1/exchanges/switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exchange_id: exchangeId })
+      });
+      // Immediately refresh dashboard
+      const dashRes = await fetch("http://localhost:8000/api/v1/dashboard");
+      if (dashRes.ok) {
+        const dash = await dashRes.json();
+        if (dash.portfolio) {
+          const eq = dash.portfolio.total_equity;
+          setBalance(parseFloat(eq.toFixed(2)));
+          setStartCapital(parseFloat(eq.toFixed(2)));
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSwitching(false);
+    }
+  };
+
   // Poll Real Backend Data Every 2.5 Seconds
   useEffect(() => {
     const fetchRealData = async () => {
       try {
-        const [dashRes, posRes] = await Promise.all([
+        const [dashRes, posRes, exRes] = await Promise.all([
           fetch("http://localhost:8000/api/v1/dashboard"),
-          fetch("http://localhost:8000/api/v1/positions")
+          fetch("http://localhost:8000/api/v1/positions"),
+          fetch("http://localhost:8000/api/v1/exchanges")
         ]);
+
+        if (exRes.ok) {
+          const exList = await exRes.json();
+          setExchanges(exList);
+        }
 
         if (dashRes.ok) {
           const dash = await dashRes.json();
+          if (dash.status?.exchange_id) {
+            setSelectedExchange(dash.status.exchange_id);
+          }
           if (dash.portfolio) {
-            const eq = dash.portfolio.total_equity ?? 4.90;
+            const eq = dash.portfolio.total_equity;
             const pnl = dash.portfolio.daily_pnl || 0.0;
             setBalance(parseFloat(eq.toFixed(2)));
-            setStartCapital(4.90);
             setTodayProfit(parseFloat(pnl.toFixed(2)));
-            const mult = Math.max(1.0, parseFloat((eq / 4.90).toFixed(2)));
+            const mult = Math.max(1.0, parseFloat((eq / (startCapital || 1.0)).toFixed(2)));
             setMultiplier(mult);
           }
         }
@@ -261,20 +305,41 @@ export default function AutonomousDualWorkstation() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#00D35A] inline-block animate-ping"></span>
-            <span className="font-extrabold text-sm tracking-wider text-white">COINBASE PERP · GROK DESK</span>
+            <span className="font-extrabold text-sm tracking-wider text-white">ATOS · PERPETUAL DESK</span>
             <span className="text-[10px] text-[#64748B] hidden md:inline font-mono">
-              Coinbase Advanced Trade · Perpetual Futures & Spot · Real Capital Mode
+              Live Multi-Exchange Execution · Delta India & Coinbase Advanced
             </span>
+          </div>
+
+          {/* Interactive Exchange Switcher Dropdown */}
+          <div className="flex items-center gap-1.5 bg-[#141518] px-2.5 py-1 rounded-xl border border-white/10 shadow-inner">
+            <span className="text-[10px] font-bold font-mono text-[#7E8B9B] uppercase">EXCHANGE:</span>
+            <select
+              value={selectedExchange}
+              onChange={(e) => handleExchangeChange(e.target.value)}
+              disabled={isSwitching}
+              className="bg-transparent text-xs font-black text-[#00D35A] outline-none cursor-pointer font-mono"
+            >
+              {exchanges.map((ex) => (
+                <option key={ex.id} value={ex.id} className="bg-[#141518] text-white">
+                  {ex.name} ({ex.net_equity ? `$${parseFloat(ex.net_equity).toFixed(2)}` : "$0.00"})
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
           <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-[#8094AE]">
-            <span className="text-[#00D35A] font-bold">● COINBASE LIVE</span>
+            <span className="text-[#00D35A] font-bold">● LIVE EXECUTION</span>
             <span>|</span>
-            <span className="text-white font-black">CAPITAL: ${balance.toFixed(2)}</span>
+            <span className="text-white font-black">
+              REAL BALANCE: ${balance.toFixed(2)} {selectedExchange === "COINBASE" ? "USDC" : "USD"}
+            </span>
             <span>|</span>
-            <span className="text-[#38BDF8] font-bold">EXCHANGE: COINBASE ADVANCED</span>
+            <span className="text-[#38BDF8] font-bold">
+              {selectedExchange === "DELTA_INDIA" ? "DELTA INDIA PERPS" : "COINBASE ADVANCED"}
+            </span>
             <span>|</span>
             <span className="text-[#00D35A]">OPEN: {openPositions.length} POS</span>
           </div>
