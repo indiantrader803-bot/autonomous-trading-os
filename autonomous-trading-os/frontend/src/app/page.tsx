@@ -24,9 +24,9 @@ export default function AutonomousDualWorkstation() {
   const [activeTab, setActiveTab] = useState<"positions" | "terminal">("positions");
 
   // Real Account & Live Portfolio State (Loaded from Backend API)
-  const [balance, setBalance] = useState<number>(10.00);
+  const [balance, setBalance] = useState<number>(4.90);
   const [todayProfit, setTodayProfit] = useState<number>(0.00);
-  const [startCapital, setStartCapital] = useState<number>(10.00);
+  const [startCapital, setStartCapital] = useState<number>(4.90);
   const [multiplier, setMultiplier] = useState<number>(1.0);
   const [clockStr, setClockStr] = useState<string>("19:30:00");
   const [activeAgentIndex, setActiveAgentIndex] = useState(3);
@@ -110,11 +110,12 @@ export default function AutonomousDualWorkstation() {
         if (dashRes.ok) {
           const dash = await dashRes.json();
           if (dash.portfolio) {
-            const eq = dash.portfolio.total_equity || 10.0;
+            const eq = dash.portfolio.total_equity ?? 4.90;
             const pnl = dash.portfolio.daily_pnl || 0.0;
             setBalance(parseFloat(eq.toFixed(2)));
+            setStartCapital(4.90);
             setTodayProfit(parseFloat(pnl.toFixed(2)));
-            const mult = Math.max(1.0, parseFloat((eq / 10.0).toFixed(2)));
+            const mult = Math.max(1.0, parseFloat((eq / 4.90).toFixed(2)));
             setMultiplier(mult);
           }
         }
