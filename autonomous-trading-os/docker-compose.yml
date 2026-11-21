@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  atos-postgres:
+    image: postgres:16-alpine
+    container_name: atos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: atos_user
+      POSTGRES_PASSWORD: atos_secure_pass
+      POSTGRES_DB: atos_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - atos_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atos_user -d atos_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - atos_network
+
+  atos-redis:
+    image: redis:7-alpine
+    container_name: atos-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - atos_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - atos_network
+
+  atos-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: atos-backend
+    restart: unless-stopped
+    depends_on:
+      atos-postgres:
+        condition: service_healthy
+      atos-redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://atos_user:atos_secure_pass@atos-postgres:5432/atos_db
+      - REDIS_URL=redis://atos-redis:6379/0
+      - APP_ENV=production
+    networks:
+      - atos_network
+
+  atos-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: atos-frontend
+    restart: unless-stopped
+    depends_on:
+      - atos-backend
+    ports:
+      - "3000:3000"
+    networks:
+      - atos_network
+
+volumes:
+  atos_pg_data:
+  atos_redis_data:
+
+networks:
+  atos_network:
+    name: atos_network
+    driver: bridge

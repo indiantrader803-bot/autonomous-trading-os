@@ -1,0 +1,56 @@
+# REFERENCE ONLY. Do not run unchanged on an unknown server.
+# Antigravity must inspect resources, ports, existing services, and secrets first.
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - postgres
+      - redis
+    networks: [trading_internal]
+    # Do not expose publicly without a reviewed reverse proxy and TLS.
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      # Browser must use a public API route/reverse proxy, not internal service URLs.
+      NODE_ENV: production
+    networks: [trading_internal]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: trading_os
+      POSTGRES_USER: trading_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set protected POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [trading_internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks: [trading_internal]
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks: [trading_internal]
+    # Do not expose Ollama publicly. Resource limits depend on inspected host.
+
+networks:
+  trading_internal:
+    internal: false # Review and restrict with firewall/proxy rules for production.
+
+volumes:
+  postgres_data:
+  redis_data:
+  ollama_data:

@@ -1,0 +1,39 @@
+# Proposed safe defaults. These are NOT live authorization. Review and adjust.
+mode: paper
+live_trading_enabled: false
+starting_capital_reference_usd: 10
+risk_per_trade_percent: 1
+max_daily_loss_percent: 3
+max_drawdown_percent: 10
+max_open_positions: 1
+leverage:
+  enabled_in_paper: false
+  default_live_max: 1
+  require_explicit_owner_config: true
+trade_controls:
+  require_protective_stop: true
+  require_pre_execution_risk_check: true
+  require_fresh_data: true
+  skip_if_min_order_exceeds_risk_budget: true
+  skip_if_liquidity_or_slippage_unacceptable: true
+  max_slippage_percent: null # must be explicitly configured
+  max_order_notional_usd: null # must be explicitly configured
+  no_martingale: true
+  no_averaging_down: true
+  no_forced_trade_quota: true
+  no_profit_target_quota: true
+kill_switch:
+  block_new_orders: true
+  allow_safe_position_management: true
+model_router:
+  critical_trading_tier: tier1
+  allow_tier3_for_critical: false
+  allow_local_small_model_for_critical: false
+  block_live_trade_when_all_qualified_tier1_unavailable: true
+  tier1_models_must_be_explicitly_qualified: true
+execution:
+  trader_is_only_order_actor: true
+  live_execution_disabled: true
+  exchange_withdrawal_permissions: false
+  require_idempotency: true
+  verify_exchange_ack_and_reconcile: true

@@ -1,0 +1,39 @@
+services:
+  # 1. Autonomous Trading OS Backend API & Agent Committee (24/7 Background Worker)
+  - type: web
+    name: atos-backend
+    env: python
+    rootDir: autonomous-trading-os/backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: standard
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: TRADING_MODE
+        value: PAPER
+      - key: PAPER_TRADING
+        value: true
+      - key: REFERENCE_CAPITAL_USD
+        value: "10.0"
+      - key: MAX_SIMULTANEOUS_POSITIONS
+        value: "10"
+      - key: SOLANA_RPC_HTTP_URL
+        value: https://api.mainnet-beta.solana.com
+
+  # 2. Autonomous Trading OS Frontend Dashboard & Mobile Terminal
+  - type: web
+    name: atos-frontend
+    env: node
+    rootDir: autonomous-trading-os/frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    plan: standard
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: atos-backend
+          property: host
