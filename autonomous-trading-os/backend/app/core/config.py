@@ -19,11 +19,11 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6380/0"
     
     # Risk Parameters
-    REFERENCE_CAPITAL_USD: float = 3.51
+    REFERENCE_CAPITAL_USD: float = 8.02
     RISK_PER_TRADE_PERCENT: float = 1.0
     DAILY_LOSS_LIMIT_PERCENT: float = 3.0
     MAX_DRAWDOWN_PERCENT: float = 10.0
-    MAX_SIMULTANEOUS_POSITIONS: int = 10
+    MAX_SIMULTANEOUS_POSITIONS: int = 15
     INITIAL_LEVERAGE: float = 1.0
     MANDATORY_STOP_LOSS: bool = True
     MANDATORY_TAKE_PROFIT: bool = True

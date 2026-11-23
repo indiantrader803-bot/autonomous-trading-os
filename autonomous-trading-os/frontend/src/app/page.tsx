@@ -134,23 +134,22 @@ export default function AutonomousDualWorkstation() {
     }
   };
 
-  // Poll Real Backend Data Every 2.5 Seconds
+  // Poll Real Backend Data Every 2.5 Seconds with Non-Blocking Independent Requests
   useEffect(() => {
-    const fetchRealData = async () => {
-      try {
-        const [dashRes, posRes, exRes] = await Promise.all([
-          fetch("http://localhost:8000/api/v1/dashboard"),
-          fetch("http://localhost:8000/api/v1/positions"),
-          fetch("http://localhost:8000/api/v1/exchanges")
-        ]);
+    const fetchRealData = () => {
+      // 1. Fetch Exchanges list
+      fetch("http://localhost:8000/api/v1/exchanges")
+        .then(r => r.ok ? r.json() : null)
+        .then(exList => {
+          if (exList) setExchanges(exList);
+        })
+        .catch(() => null);
 
-        if (exRes.ok) {
-          const exList = await exRes.json();
-          setExchanges(exList);
-        }
-
-        if (dashRes.ok) {
-          const dash = await dashRes.json();
+      // 2. Fetch Dashboard Overview
+      fetch("http://localhost:8000/api/v1/dashboard")
+        .then(r => r.ok ? r.json() : null)
+        .then(dash => {
+          if (!dash) return;
           if (dash.status?.exchange_id) {
             setSelectedExchange(dash.status.exchange_id);
           }
@@ -162,10 +161,14 @@ export default function AutonomousDualWorkstation() {
             const mult = Math.max(1.0, parseFloat((eq / (startCapital || 1.0)).toFixed(2)));
             setMultiplier(mult);
           }
-        }
+        })
+        .catch(() => null);
 
-        if (posRes.ok) {
-          const posData = await posRes.json();
+      // 3. Fetch Real Open Positions
+      fetch("http://localhost:8000/api/v1/positions")
+        .then(r => r.ok ? r.json() : null)
+        .then(posData => {
+          if (!posData) return;
           const positions = posData.open_positions || [];
           setOpenPositions(positions);
 
@@ -181,25 +184,23 @@ export default function AutonomousDualWorkstation() {
               age: "8s old",
               mc: "$16.5K",
               entryPrice: latest.entry_price,
-              units: Math.round(latest.units),
+              units: Math.round(latest.units || latest.size || 1),
               devHolding: "3%",
               bundles: "8%",
               devHistory: "no prior rugs",
               index: `0${positions.length} / 10`,
               statusText: "POSITION ACTIVE",
               statusDetail: `Stop: $${latest.stop_loss} · TP: $${latest.take_profit}`,
-              orderStatus: "JITO BUNDLE EXECUTED",
+              orderStatus: "LIVE POSITION HELD",
               iconImg: icon
             });
           }
-        }
-      } catch (err) {
-        // Fallback gracefully without crash
-      }
+        })
+        .catch(() => null);
     };
 
     fetchRealData();
-    const interval = setInterval(fetchRealData, 2500);
+    const interval = setInterval(fetchRealData, 2000);
     return () => clearInterval(interval);
   }, []);
 

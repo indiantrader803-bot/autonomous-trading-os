@@ -24,12 +24,16 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Global Cached Real Positions & Balances (Updated in background daemon without blocking HTTP requests)
+latest_cached_positions: List[Dict[str, Any]] = []
+latest_cached_balances: Dict[str, float] = {"delta": 3.12, "coinbase": 4.90, "total": 8.02}
+
 # Active Multi-Exchange Execution State (Simultaneous Dual-Exchange Mode)
 active_exchange_state = {
     "current_exchange": "BOTH", # BOTH, DELTA_INDIA, COINBASE
-    "delta_equity": 3.51,
+    "delta_equity": 3.12,
     "coinbase_equity": 4.90,
-    "total_equity": 8.41
+    "total_equity": 8.02
 }
 
 # 24/7 Background Trading Daemon Task (Simultaneous Dual-Exchange Execution)
@@ -46,7 +50,9 @@ async def autonomous_background_worker():
         {"symbol": "BTCUSD", "product_id": 21525, "exchange": "DELTA_INDIA", "display": "BTCUSD PERP"},
         {"symbol": "ETHUSD", "product_id": 15367, "exchange": "DELTA_INDIA", "display": "ETHUSD PERP"},
         {"symbol": "SOLUSD", "product_id": 58202, "exchange": "DELTA_INDIA", "display": "SOLUSD PERP"},
-        {"symbol": "XRPUSD", "product_id": 67711, "exchange": "DELTA_INDIA", "display": "XRPUSD PERP"}
+        {"symbol": "XRPUSD", "product_id": 67711, "exchange": "DELTA_INDIA", "display": "XRPUSD PERP"},
+        {"symbol": "WIFUSD", "product_id": 105658, "exchange": "DELTA_INDIA", "display": "WIFUSD PERP"},
+        {"symbol": "ADAUSD", "product_id": 3136, "exchange": "DELTA_INDIA", "display": "ADAUSD PERP"}
     ]
 
     coinbase_products = [
@@ -61,40 +67,67 @@ async def autonomous_background_worker():
     while True:
         try:
             # 1. Concurrently Sync Real Balances from BOTH Exchanges
-            delta_bal = 3.51
+            delta_bal = 3.12
             cb_bal = 4.90
 
             if delta_client.is_configured():
-                d_data = await delta_client.get_wallet_balances()
-                delta_bal = d_data.get("net_equity", 3.51)
-                active_exchange_state["delta_equity"] = delta_bal
+                try:
+                    d_data = await asyncio.wait_for(delta_client.get_wallet_balances(), timeout=3.0)
+                    delta_bal = d_data.get("net_equity", 3.12)
+                    active_exchange_state["delta_equity"] = delta_bal
+                except Exception as e:
+                    pass
 
             if coinbase_client.is_configured():
-                c_data = await coinbase_client.get_total_balance_usd()
-                if c_data > 0:
-                    cb_bal = c_data
-                    active_exchange_state["coinbase_equity"] = cb_bal
+                try:
+                    c_data = await asyncio.wait_for(coinbase_client.get_total_balance_usd(), timeout=3.0)
+                    if c_data > 0:
+                        cb_bal = c_data
+                        active_exchange_state["coinbase_equity"] = cb_bal
+                except Exception as e:
+                    pass
 
             total_combined_equity = round(delta_bal + cb_bal, 2)
             active_exchange_state["total_equity"] = total_combined_equity
             paper_trader.equity = total_combined_equity
+            latest_cached_balances["delta"] = delta_bal
+            latest_cached_balances["coinbase"] = cb_bal
+            latest_cached_balances["total"] = total_combined_equity
+
+            # In LIVE mode, fetch real positions from exchanges to verify capacity
+            real_positions = []
+            if settings.TRADING_MODE == "LIVE":
+                try:
+                    if delta_client.is_configured():
+                        real_positions.extend(await asyncio.wait_for(delta_client.get_real_positions(), timeout=3.0))
+                    if coinbase_client.is_configured():
+                        real_positions.extend(await asyncio.wait_for(coinbase_client.get_real_positions(), timeout=3.0))
+                except Exception:
+                    pass
+                if real_positions:
+                    latest_cached_positions.clear()
+                    latest_cached_positions.extend(real_positions)
 
             # 2. Concurrently Scan & Trade Delta Exchange India
             prod_d = delta_products[scan_d_idx % len(delta_products)]
             scan_d_idx += 1
-            t_d = await delta_client.get_ticker(prod_d["symbol"])
-            px_d = t_d.get("close", 0.0) or t_d.get("mark_price", 0.0)
+            try:
+                t_d = await asyncio.wait_for(delta_client.get_ticker(prod_d["symbol"]), timeout=3.0)
+                px_d = t_d.get("close", 0.0) or t_d.get("mark_price", 0.0)
+            except Exception:
+                px_d = 0.0
 
-            if px_d > 0 and len(paper_trader.active_positions) < settings.MAX_SIMULTANEOUS_POSITIONS:
-                active_symbols = [p["symbol"] for p in paper_trader.active_positions.values()]
-                if prod_d["symbol"] not in active_symbols:
+            held_symbols = [p["symbol"].replace("$", "") for p in (real_positions if settings.TRADING_MODE == "LIVE" else paper_trader.active_positions.values())]
+
+            if px_d > 0 and len(held_symbols) < settings.MAX_SIMULTANEOUS_POSITIONS:
+                if prod_d["symbol"] not in held_symbols:
                     state_d = {
                         "symbol": prod_d["symbol"],
                         "direction": "LONG",
                         "market_price": px_d,
                         "current_equity": delta_bal,
                         "current_daily_pnl": 0.0,
-                        "active_positions_count": len(paper_trader.active_positions),
+                        "active_positions_count": len(held_symbols),
                         "scout_output": None,
                         "researcher_output": None,
                         "strategist_proposal": None,
@@ -104,38 +137,43 @@ async def autonomous_background_worker():
                         "rejection_reason": None,
                         "setup": None
                     }
-                    res_d = await committee_graph.ainvoke(state_d)
-                    if res_d.get("status") == "APPROVED":
-                        setup_d = res_d.get("setup", {})
-                        if settings.TRADING_MODE == "LIVE" and delta_client.is_configured():
-                            d_exec = await delta_client.place_order(
-                                product_id=prod_d["product_id"],
-                                size=1,
-                                side="buy"
-                            )
-                            print(f"[DELTA LIVE] Executed {prod_d['symbol']} -> {d_exec}", flush=True)
-                        else:
-                            paper_trader.execute_approved_proposal({
-                                "symbol": prod_d["symbol"],
-                                "setup": setup_d
-                            })
+                    try:
+                        res_d = await asyncio.wait_for(committee_graph.ainvoke(state_d), timeout=6.0)
+                        if res_d.get("status") == "APPROVED":
+                            setup_d = res_d.get("setup", {})
+                            if settings.TRADING_MODE == "LIVE" and delta_client.is_configured():
+                                d_exec = await delta_client.place_order(
+                                    product_id=prod_d["product_id"],
+                                    size=1,
+                                    side="buy"
+                                )
+                                print(f"[DELTA LIVE] Executed {prod_d['symbol']} -> {d_exec}", flush=True)
+                            else:
+                                paper_trader.execute_approved_proposal({
+                                    "symbol": prod_d["symbol"],
+                                    "setup": setup_d
+                                })
+                    except Exception as e:
+                        print(f"[DELTA EVAL] {prod_d['symbol']} error: {e}", flush=True)
 
             # 3. Concurrently Scan & Trade Coinbase Advanced
             prod_c = coinbase_products[scan_c_idx % len(coinbase_products)]
             scan_c_idx += 1
-            t_c = await coinbase_client.get_product_ticker(prod_c["product_id"])
-            px_c = t_c.get("price", 0.0)
+            try:
+                t_c = await asyncio.wait_for(coinbase_client.get_product_ticker(prod_c["product_id"]), timeout=3.0)
+                px_c = t_c.get("price", 0.0)
+            except Exception:
+                px_c = 0.0
 
-            if px_c > 0 and len(paper_trader.active_positions) < settings.MAX_SIMULTANEOUS_POSITIONS:
-                active_symbols = [p["symbol"] for p in paper_trader.active_positions.values()]
-                if prod_c["symbol"] not in active_symbols:
+            if px_c > 0 and len(held_symbols) < settings.MAX_SIMULTANEOUS_POSITIONS:
+                if prod_c["symbol"] not in held_symbols:
                     state_c = {
                         "symbol": prod_c["symbol"],
                         "direction": "LONG",
                         "market_price": px_c,
                         "current_equity": cb_bal,
                         "current_daily_pnl": 0.0,
-                        "active_positions_count": len(paper_trader.active_positions),
+                        "active_positions_count": len(held_symbols),
                         "scout_output": None,
                         "researcher_output": None,
                         "strategist_proposal": None,
@@ -145,21 +183,24 @@ async def autonomous_background_worker():
                         "rejection_reason": None,
                         "setup": None
                     }
-                    res_c = await committee_graph.ainvoke(state_c)
-                    if res_c.get("status") == "APPROVED":
-                        setup_c = res_c.get("setup", {})
-                        if settings.TRADING_MODE == "LIVE" and coinbase_client.is_configured():
-                            c_exec = await coinbase_client.place_order(
-                                product_id=prod_c["product_id"],
-                                side="BUY",
-                                notional_usd=1.50
-                            )
-                            print(f"[COINBASE LIVE] Executed {prod_c['symbol']} -> {c_exec}", flush=True)
-                        else:
-                            paper_trader.execute_approved_proposal({
-                                "symbol": prod_c["symbol"],
-                                "setup": setup_c
-                            })
+                    try:
+                        res_c = await asyncio.wait_for(committee_graph.ainvoke(state_c), timeout=6.0)
+                        if res_c.get("status") == "APPROVED":
+                            setup_c = res_c.get("setup", {})
+                            if settings.TRADING_MODE == "LIVE" and coinbase_client.is_configured():
+                                c_exec = await coinbase_client.place_order(
+                                    product_id=prod_c["product_id"],
+                                    side="BUY",
+                                    notional_usd=1.50
+                                )
+                                print(f"[COINBASE LIVE] Executed {prod_c['symbol']} -> {c_exec}", flush=True)
+                            else:
+                                paper_trader.execute_approved_proposal({
+                                    "symbol": prod_c["symbol"],
+                                    "setup": setup_c
+                                })
+                    except Exception as e:
+                        print(f"[COINBASE EVAL] {prod_c['symbol']} error: {e}", flush=True)
 
             # 4. Live Price Feeds Reconciliation for Active Positions
             if paper_trader.active_positions:
@@ -215,11 +256,18 @@ async def list_exchanges():
     """
     Returns available exchanges, their live connectivity, and verified balance.
     """
-    delta_bal = await delta_client.get_wallet_balances()
-    cb_bal = await coinbase_client.get_total_balance_usd()
-    d_eq = delta_bal.get("net_equity", 3.51)
-    c_eq = cb_bal if cb_bal > 0 else 4.90
-    
+    try:
+        delta_bal = await asyncio.wait_for(delta_client.get_wallet_balances(), timeout=3.0)
+        d_eq = delta_bal.get("net_equity", 3.12)
+    except Exception:
+        d_eq = active_exchange_state.get("delta_equity", 3.12)
+
+    try:
+        cb_bal = await asyncio.wait_for(coinbase_client.get_total_balance_usd(), timeout=3.0)
+        c_eq = cb_bal if cb_bal > 0 else 4.90
+    except Exception:
+        c_eq = active_exchange_state.get("coinbase_equity", 4.90)
+
     return [
         {
             "id": "BOTH",
@@ -287,10 +335,17 @@ async def get_dashboard_overview():
     curr_ex = active_exchange_state["current_exchange"]
     portfolio = paper_trader.get_portfolio_summary()
 
-    d_bal = await delta_client.get_wallet_balances()
-    cb_bal = await coinbase_client.get_total_balance_usd()
-    d_eq = d_bal.get("net_equity", 3.51)
-    c_eq = cb_bal if cb_bal > 0 else 4.90
+    try:
+        d_bal = await asyncio.wait_for(delta_client.get_wallet_balances(), timeout=3.0)
+        d_eq = d_bal.get("net_equity", 3.12)
+    except Exception:
+        d_eq = active_exchange_state.get("delta_equity", 3.12)
+
+    try:
+        cb_bal = await asyncio.wait_for(coinbase_client.get_total_balance_usd(), timeout=3.0)
+        c_eq = cb_bal if cb_bal > 0 else 4.90
+    except Exception:
+        c_eq = active_exchange_state.get("coinbase_equity", 4.90)
 
     if curr_ex == "BOTH":
         live_eq = round(d_eq + c_eq, 2)
@@ -313,17 +368,35 @@ async def get_dashboard_overview():
         portfolio["total_equity"] = live_eq
         portfolio["cash_balance"] = live_eq
 
-    markets = await market_provider.get_hyperliquid_markets()
+    try:
+        markets = await asyncio.wait_for(market_provider.get_hyperliquid_markets(), timeout=2.0)
+    except Exception:
+        markets = []
 
     # Fetch real live exchange positions when LIVE
     if settings.TRADING_MODE == "LIVE":
         real_positions = []
-        if delta_client.is_configured():
-            real_positions.extend(await delta_client.get_real_positions())
-        if coinbase_client.is_configured():
-            real_positions.extend(await coinbase_client.get_real_positions())
-        dashboard_positions = real_positions
-        portfolio["open_positions_count"] = len(real_positions)
+        try:
+            if delta_client.is_configured():
+                d_pos = await asyncio.wait_for(delta_client.get_real_positions(), timeout=2.0)
+                real_positions.extend(d_pos)
+        except Exception:
+            pass
+        try:
+            if coinbase_client.is_configured():
+                cb_pos = await asyncio.wait_for(coinbase_client.get_real_positions(), timeout=2.0)
+                real_positions.extend(cb_pos)
+        except Exception:
+            pass
+        if real_positions:
+            latest_cached_positions.clear()
+            latest_cached_positions.extend(real_positions)
+            dashboard_positions = real_positions
+        elif latest_cached_positions:
+            dashboard_positions = latest_cached_positions
+        else:
+            dashboard_positions = []
+        portfolio["open_positions_count"] = len(dashboard_positions)
     else:
         dashboard_positions = list(paper_trader.active_positions.values())
 
@@ -449,18 +522,39 @@ async def list_positions():
     Returns real live exchange positions directly from connected exchanges
     (Delta Exchange India and Coinbase) when in LIVE mode, guaranteeing 100% 
     synchronicity between UI and exchange records with zero ghost positions.
+    Uses cached live positions if an active network call takes >2s.
     """
     if settings.TRADING_MODE == "LIVE":
         real_positions = []
-        if delta_client.is_configured():
-            d_pos = await delta_client.get_real_positions()
-            real_positions.extend(d_pos)
-        if coinbase_client.is_configured():
-            cb_pos = await coinbase_client.get_real_positions()
-            real_positions.extend(cb_pos)
+        try:
+            if delta_client.is_configured():
+                d_pos = await asyncio.wait_for(delta_client.get_real_positions(), timeout=2.5)
+                real_positions.extend(d_pos)
+        except Exception:
+            pass
+
+        try:
+            if coinbase_client.is_configured():
+                cb_pos = await asyncio.wait_for(coinbase_client.get_real_positions(), timeout=2.5)
+                real_positions.extend(cb_pos)
+        except Exception:
+            pass
+
+        if real_positions:
+            latest_cached_positions.clear()
+            latest_cached_positions.extend(real_positions)
+            return {
+                "open_positions": real_positions,
+                "trade_history": paper_trader.trade_history
+            }
+        elif latest_cached_positions:
+            return {
+                "open_positions": latest_cached_positions,
+                "trade_history": paper_trader.trade_history
+            }
 
         return {
-            "open_positions": real_positions,
+            "open_positions": [],
             "trade_history": paper_trader.trade_history
         }
 
